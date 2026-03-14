@@ -61,8 +61,11 @@ function getSched(dateStr){
 }
 function gd(k){return S.days[k]||{}}
 function getEff(k,kid){const day=gd(k),sched=getSched(k),kd=day[kid]||{};if(day.override&&(kd.daytime||kd.overnight!=null))return{daytime:kd.daytime||sched.daytime,overnight:kd.overnight!=null?kd.overnight:sched.overnight};return{daytime:sched.daytime,overnight:sched.overnight}}
-function getSchedEff(k,kid){const day=gd(k),sched=getSched(k),so=day.schedOverride&&day.schedOverride[kid];if(so){return{daytime:so.daytime||sched.daytime,overnight:so.overnight!=null?so.overnight:sched.overnight,swapped:!!(so.daytime&&so.daytime!==sched.daytime)||(so.overnight!=null&&so.overnight!==sched.overnight)}}return{daytime:sched.daytime,overnight:sched.overnight,swapped:false}}
-function hasSchedSwap(k){const day=gd(k);if(!day.schedOverride)return false;for(const kid of KIDS){const se=getSchedEff(k,kid);if(se.swapped)return true}return false}
+// schedOverride stores: {zeke:{daytime,overnight},gus:{daytime,overnight},reason:'swap'|'extra_father'|'extra_mother'|'other',reasonNote:''}
+function getSchedEff(k,kid){const day=gd(k),sched=getSched(k),so=day.schedOverride&&day.schedOverride[kid];if(so){const dt=so.daytime||sched.daytime,on=so.overnight!=null?so.overnight:sched.overnight;const swapped=(so.daytime&&so.daytime!==sched.daytime)||(so.overnight!=null&&so.overnight!==sched.overnight);return{daytime:dt,overnight:on,changed:!!swapped}}return{daytime:sched.daytime,overnight:sched.overnight,changed:false}}
+function getSchedReason(k){const day=gd(k);if(!day.schedOverride)return{reason:null,reasonNote:''};return{reason:day.schedOverride._reason||null,reasonNote:day.schedOverride._reasonNote||''}}
+function hasSchedChange(k){const day=gd(k);if(!day.schedOverride)return false;for(const kid of KIDS){const se=getSchedEff(k,kid);if(se.changed)return true}return false}
+function getSchedChangeType(k){const r=getSchedReason(k);return r.reason||'swap'}
 function isOv(k){const d=gd(k);if(!d||!d.override)return false;const s=getSched(k);for(const kid of KIDS){const kd=d[kid]||{};if(kd.daytime&&kd.daytime!==s.daytime)return true;if(kd.overnight!=null&&kd.overnight!==s.overnight)return true}return false}
 function mCells(y,m){const f=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate(),pd=new Date(y,m,0).getDate(),c=[];for(let i=f-1;i>=0;i--)c.push({d:pd-i,m:m-1,y:m===0?y-1:y,o:1});for(let i=1;i<=dim;i++)c.push({d:i,m,y,o:0});const r=42-c.length;for(let i=1;i<=r;i++)c.push({d:i,m:m+1,y:m===11?y+1:y,o:1});return c}
 
@@ -100,6 +103,7 @@ function sel(k){S.sel=k;S.pf=[];R()}
 function goTo(k){const[y,m]=k.split('-').map(Number);S.cY=y;S.cM=m-1;S.sel=k;S.tab='calendar';S.pf=[];R()}
 function setK(kid,field,val){const d=gd(S.sel);if(!S.days[S.sel])S.days[S.sel]={};if(!S.days[S.sel][kid])S.days[S.sel][kid]={daytime:null,overnight:null};S.days[S.sel][kid][field]=val;S.days[S.sel].override=true;svDays();R()}
 function setSchedK(kid,field,val){if(!S.days[S.sel])S.days[S.sel]={};if(!S.days[S.sel].schedOverride)S.days[S.sel].schedOverride={};if(!S.days[S.sel].schedOverride[kid])S.days[S.sel].schedOverride[kid]={daytime:null,overnight:null};S.days[S.sel].schedOverride[kid][field]=val;svDays();R()}
+function setSchedReasonFn(reason,note){if(!S.days[S.sel])S.days[S.sel]={};if(!S.days[S.sel].schedOverride)S.days[S.sel].schedOverride={};S.days[S.sel].schedOverride._reason=reason;S.days[S.sel].schedOverride._reasonNote=note||'';svDays();R()}
 function resetSched(){if(S.days[S.sel]){delete S.days[S.sel].schedOverride;svDays();R()}}
 function resetDay(){if(S.days[S.sel]){S.days[S.sel].gus={daytime:null,overnight:null};S.days[S.sel].zeke={daytime:null,overnight:null};S.days[S.sel].override=false;svDays();R()}}
 function addEv(){
@@ -223,7 +227,7 @@ function renderCal(s,tK,secThu){
       if(gSame){if(ge.daytime==='dad'&&ge.overnight==='dad')tags+='<span class="tg tg-g-dad">Both D+ON</span>';else if(ge.daytime==='dad')tags+='<span class="tg tg-g-dad">Both Day</span>';else tags+='<span class="tg tg-g-mom">Both Mom</span>'}
       else{const gc=ge.daytime==='dad'||ge.overnight==='dad'?'tg-g-dad':'tg-g-mom';const zc=ze.daytime==='dad'||ze.overnight==='dad'?'tg-z-dad':'tg-z-mom';tags+=`<span class="tg ${gc}">G:${ge.daytime==='dad'?'D':''}${ge.overnight==='dad'?'ON':''}</span><span class="tg ${zc}">Z:${ze.daytime==='dad'?'D':''}${ze.overnight==='dad'?'ON':''}</span>`}
       if(ov)tags+='<span class="tg tg-fi">!</span>';
-      if(hasSchedSwap(k))tags+='<span class="tg tg-xc">SW</span>';
+      const sc=hasSchedChange(k);if(sc){const sct=getSchedChangeType(k);tags+=sct==='swap'?'<span class="tg tg-xc">SW</span>':sct==='extra_father'?'<span class="tg tg-g-dad">+F</span>':sct==='extra_mother'?'<span class="tg tg-g-mom">+M</span>':'<span class="tg tg-fi">SC</span>'}
       if(day.evidence&&day.evidence.length)tags+=`<span class="tg tg-ev">${day.evidence.length}</span>`;
       return`<div class="${cls}" onclick="sel('${k}')"><div class="sbar-wrap"><div class="sbar-child ${gBar}" title="Gus"></div><div class="sbar-child ${zBar}" title="Zeke"></div></div><div class="dn">${c.d}</div><div class="dtags">${tags}</div></div>`;
     }).join('')}</div></div>
@@ -232,13 +236,14 @@ function renderCal(s,tK,secThu){
 
 function renderDay(ph){
   const k=S.sel,day=gd(k),sched=getSched(k),ov=isOv(k),ev=day.evidence||[],xc=day.exchanges||[];
-  const swapped=hasSchedSwap(k);
+  const schedChanged=hasSchedChange(k);
+  const schedR=getSchedReason(k);
+  const REASONS={swap:{label:'Agreed swap / trade day',icon:'&#128260;',desc:'Both parents agreed to trade this day.',bg:'var(--on-bg)',fg:'var(--on-fg)'},extra_father:{label:'Father has extra time',icon:'&#128170;',desc:'Father has kids outside court order (not a swap).',bg:'var(--dad-bg)',fg:'var(--dad-fg)'},extra_mother:{label:'Mother has extra time',icon:'&#127968;',desc:'Mother has kids during Father\'s scheduled time.',bg:'var(--mom-bg)',fg:'var(--mom-fg)'},refused:{label:'Ex refused exchange',icon:'&#128683;',desc:'Scheduled parent was denied custody exchange.',bg:'#FCEBEB',fg:'#791F1F'},other:{label:'Other',icon:'&#128221;',desc:'Other schedule deviation.',bg:'var(--warn-bg)',fg:'var(--warn-fg)'}};
 
   function schedChildRow(kid){
-    const se=getSchedEff(k,kid),kc=KC[kid],name=KN[kid],courtSched=getSched(k);
-    const isSwap=se.swapped;
+    const se=getSchedEff(k,kid),kc=KC[kid],name=KN[kid];
     return`<div style="margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div style="width:20px;height:20px;border-radius:50%;background:${kc.avatar};display:flex;align-items:center;justify-content:center;font-weight:500;font-size:10px;color:#fff">${name[0]}</div><span style="font-weight:500;font-size:12px">${name}</span>${isSwap?'<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:var(--pink-bg);color:var(--pink-fg);font-weight:500">SWAP</span>':''}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div style="width:20px;height:20px;border-radius:50%;background:${kc.avatar};display:flex;align-items:center;justify-content:center;font-weight:500;font-size:10px;color:#fff">${name[0]}</div><span style="font-weight:500;font-size:12px">${name}</span>${se.changed?`<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:${schedR.reason&&REASONS[schedR.reason]?REASONS[schedR.reason].bg:'var(--pink-bg)'};color:${schedR.reason&&REASONS[schedR.reason]?REASONS[schedR.reason].fg:'var(--pink-fg)'};font-weight:500">${schedR.reason&&REASONS[schedR.reason]?REASONS[schedR.reason].label:'CHANGED'}</span>`:''}</div>
       <div style="font-size:10px;color:var(--tx2);margin-bottom:3px">Daytime</div>
       <div class="child-grid" style="margin-bottom:6px">
         <div class="child-btn ${se.daytime==='dad'?'sel-dad':''}" onclick="setSchedK('${kid}','daytime','dad')" style="font-size:11px;padding:6px">Father</div>
@@ -269,35 +274,46 @@ function renderDay(ph){
     </div>`;
   }
 
-  // Detect if actual differs from scheduled
   let mismatch=false;
   for(const kid of KIDS){const se=getSchedEff(k,kid),ae=getEff(k,kid);if(se.daytime!==ae.daytime||se.overnight!==ae.overnight)mismatch=true}
 
   const dayBg=sched.daytime==='dad'?'var(--dad-bg)':'var(--mom-bg)',dayFg=sched.daytime==='dad'?'var(--dad-fg)':'var(--mom-fg)',dayWho=sched.daytime==='dad'?'Father':'Mother';
   const nBg=sched.overnight==='dad'?'var(--on-bg)':'var(--mom-bg)',nFg=sched.overnight==='dad'?'var(--on-fg)':'var(--mom-fg)',nWho=sched.overnight==='dad'?'Father':'Mother';
 
+  const curReason=schedR.reason||'swap';
+  const reasonBanner=schedChanged&&REASONS[curReason]?`<div class="swap-banner" style="background:${REASONS[curReason].bg};color:${REASONS[curReason].fg};border:.5px solid currentColor">${REASONS[curReason].icon} ${REASONS[curReason].desc}</div>`:'';
+
   return`<div class="panel"><h3>${fmD(k)}</h3>
     <div class="sn"><b>Court order:</b> ${esc(sched.note)}<br><b>Default:</b> <span class="sp" style="background:${dayBg};color:${dayFg}">${dayWho} day</span> <span class="sp" style="background:${nBg};color:${nFg}">${nWho} night</span></div>
     <div class="co-ref">"${esc(sched.ref)}"</div>
 
-    ${swapped?'<div class="swap-banner swapped">&#128260; Scheduled parent changed from court order (swap/trade day).</div>':''}
-    ${mismatch?'<div class="swap-banner swapped">&#9888; Actual custody differs from scheduled — deviation logged.</div>':''}
-    ${!swapped&&!mismatch&&ov?'<div class="on2">&#9888; Overridden from court order.</div>':''}
+    ${reasonBanner}
+    ${mismatch?'<div class="swap-banner" style="background:#FCEBEB;color:#791F1F;border:.5px solid #F09595">&#9888; Actual custody differs from what was scheduled.</div>':''}
+    ${!schedChanged&&!mismatch&&ov?'<div class="on2">&#9888; Actual custody overridden.</div>':''}
 
     <div class="sched-actual-grid">
       <div class="sa-col scheduled">
         <h4 style="color:var(--ev)">&#128197; Scheduled parent</h4>
-        <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Per court order or agreed swap. Change to log a trade day.</div>
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:8px">Who SHOULD have the kids. Change for swaps or deviations.</div>
         ${schedChildRow('zeke')}
         ${schedChildRow('gus')}
-        ${swapped?'<div class="ar" style="margin-top:4px"><button class="btn bo bsm" onclick="resetSched()">Reset to court order</button></div>':''}
+        ${schedChanged?`
+          <div style="margin-top:8px">
+            <div style="font-size:10px;color:var(--tx2);margin-bottom:4px;font-weight:500">REASON FOR CHANGE</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+              ${Object.keys(REASONS).map(r=>`<button class="btn ${curReason===r?'bp':'bo'}" style="font-size:10px;padding:4px 8px" onclick="setSchedReasonFn('${r}',document.getElementById('sched-note-input')?.value||'')">${REASONS[r].icon} ${REASONS[r].label}</button>`).join('')}
+            </div>
+            <input id="sched-note-input" type="text" placeholder="Optional note (e.g. 'Kelly asked to swap for wedding')" value="${esc(schedR.reasonNote)}" onchange="setSchedReasonFn('${curReason}',this.value)" style="width:100%;padding:7px 10px;border:.5px solid rgba(0,0,0,.1);border-radius:6px;font-size:12px;font-family:inherit" />
+          </div>
+          <div class="ar" style="margin-top:6px"><button class="btn bo bsm" onclick="resetSched()">Reset to court order</button></div>
+        `:''}
       </div>
       <div class="sa-col actual">
         <h4 style="color:var(--dad)">&#9989; Actual custody</h4>
-        <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Who actually had the kids this day.</div>
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:8px">Who ACTUALLY had the kids this day.</div>
         ${actualChildRow('zeke')}
         ${actualChildRow('gus')}
-        ${ov?'<div class="ar" style="margin-top:4px"><button class="btn bo bsm" onclick="resetDay()">Reset to scheduled</button></div>':''}
+        ${ov?'<div class="ar" style="margin-top:6px"><button class="btn bo bsm" onclick="resetDay()">Reset to scheduled</button></div>':''}
       </div>
     </div>
 

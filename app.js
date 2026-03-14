@@ -4,12 +4,52 @@
 // vault, exchanges, bulk entry, export/import
 // ═══════════════════════════════════════════════════════
 
+// ═══ STORAGE LAYER — IndexedDB with localStorage fallback ═══
+let useIDB=false,db=null;
 const DB_NAME='CustodyTrackerDB',DB_VER=1;
-let db=null;
+const LS_PREFIX='ct_';
 
-function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('kv'))d.createObjectStore('kv')};r.onsuccess=e=>{db=e.target.result;res(db)};r.onerror=e=>rej(e)})}
-function dbGet(k){return new Promise((res,rej)=>{const tx=db.transaction('kv','readonly');const s=tx.objectStore('kv');const r=s.get(k);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null)})}
-function dbSet(k,v){return new Promise((res,rej)=>{const tx=db.transaction('kv','readwrite');const s=tx.objectStore('kv');s.put(v,k);tx.oncomplete=()=>res();tx.onerror=()=>rej()})}
+// Try to open IndexedDB
+function tryOpenDB(){
+  return new Promise(res=>{
+    try{
+      if(!window.indexedDB){res(false);return}
+      const r=indexedDB.open(DB_NAME,DB_VER);
+      r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('kv'))d.createObjectStore('kv')};
+      r.onsuccess=e=>{db=e.target.result;res(true)};
+      r.onerror=()=>res(false);
+      r.onblocked=()=>res(false);
+      // Timeout fallback - if IDB hangs for 2 seconds, give up
+      setTimeout(()=>{if(!db)res(false)},2000);
+    }catch(e){res(false)}
+  });
+}
+
+function storeGet(k){
+  if(useIDB&&db){
+    return new Promise(res=>{
+      try{
+        const tx=db.transaction('kv','readonly');const s=tx.objectStore('kv');const r=s.get(k);
+        r.onsuccess=()=>res(r.result||null);
+        r.onerror=()=>res(lsGet(k));
+      }catch(e){res(lsGet(k))}
+    });
+  }
+  return Promise.resolve(lsGet(k));
+}
+
+function storeSet(k,v){
+  // Always save to localStorage as backup
+  lsSet(k,v);
+  if(useIDB&&db){
+    try{
+      const tx=db.transaction('kv','readwrite');const s=tx.objectStore('kv');s.put(v,k);
+    }catch(e){}
+  }
+}
+
+function lsGet(k){try{const v=localStorage.getItem(LS_PREFIX+k);return v?JSON.parse(v):null}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem(LS_PREFIX+k,JSON.stringify(v))}catch(e){}}
 
 // State
 const SK='days',FK='files',VK='vault',CFK='cfg';
@@ -17,14 +57,22 @@ let S={tab:'calendar',cM:new Date().getMonth(),cY:new Date().getFullYear(),sel:n
 let FS={},vault=[],cfg={summerFirstWeekFather:true,schoolOut2025:'2025-06-05',schoolOut2026:'2026-06-04',laborDay2025:'2025-09-01',laborDay2026:'2026-09-07'};
 
 async function loadAll(){
-  await openDB();
-  const[d,f,v,c]=await Promise.all([dbGet(SK),dbGet(FK),dbGet(VK),dbGet(CFK)]);
-  if(d)S.days=d;if(f)FS=f;if(v)vault=v;if(c)Object.assign(cfg,c);
+  try{
+    useIDB=await tryOpenDB();
+  }catch(e){useIDB=false}
+  try{
+    const[d,f,v,c]=await Promise.all([storeGet(SK),storeGet(FK),storeGet(VK),storeGet(CFK)]);
+    if(d)S.days=d;if(f)FS=f;if(v)vault=v;if(c)Object.assign(cfg,c);
+  }catch(e){
+    // Last resort: try pure localStorage
+    const d=lsGet(SK),f=lsGet(FK),v=lsGet(VK),c=lsGet(CFK);
+    if(d)S.days=d;if(f)FS=f;if(v)vault=v;if(c)Object.assign(cfg,c);
+  }
 }
-function svDays(){dbSet(SK,S.days)}
-function svFiles(){dbSet(FK,FS)}
-function svVault(){dbSet(VK,vault)}
-function svCfg(){dbSet(CFK,cfg)}
+function svDays(){storeSet(SK,S.days)}
+function svFiles(){storeSet(FK,FS)}
+function svVault(){storeSet(VK,vault)}
+function svCfg(){storeSet(CFK,cfg)}
 
 // ═══ KIDS ═══
 const KIDS=['zeke','gus'],KN={gus:'Gus',zeke:'Zeke'};
@@ -383,7 +431,10 @@ function renderCfg(){return`<div class="panel"><h3>Court order schedule</h3><p s
 function renderModal(){if(!S.modal)return'';const f=S.modal.file;if(!f)return'';let p='';if(isImg(f.name))p=`<img src="${f.base64}" style="max-width:100%;border-radius:var(--r)">`;else if(isPDF(f.name))p=`<iframe src="${f.base64}" style="width:100%;height:70vh;border:none;border-radius:var(--r)"></iframe>`;else{const inf=fi(f.name);p=`<div style="text-align:center;padding:2rem"><div style="font-size:40px;margin-bottom:10px">${inf.i}</div><div style="font-size:14px;font-weight:500">${esc(f.name)}</div><div style="font-size:11px;color:var(--tx3);margin:6px 0">${inf.l} — ${fz(f.size)}</div><div style="font-size:12px;color:var(--tx2)">Download to open.</div></div>`}return`<div class="mo" onclick="if(event.target===this){S.modal=null;R()}"><div class="mod"><button class="mc" onclick="S.modal=null;R()">&times;</button><h3>${esc(f.name)}</h3>${p}<div style="margin-top:10px;display:flex;gap:6px"><button class="btn bp" onclick="dlf('${f.id}')">Download</button><button class="btn bo" onclick="S.modal=null;R()">Close</button></div></div></div>`}
 
 // ═══ INIT ═══
-loadAll().then(()=>R());
+loadAll().then(()=>R()).catch(e=>{console.error('Load error:',e);R()});
+
+// Fallback: if loadAll hangs, force render after 3 seconds
+setTimeout(()=>{const app=document.getElementById('app');if(app&&app.innerHTML.includes('Loading')){console.warn('Forced render after timeout');R()}},3000);
 
 // PWA install
 let deferredPrompt=null;

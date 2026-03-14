@@ -61,6 +61,8 @@ function getSched(dateStr){
 }
 function gd(k){return S.days[k]||{}}
 function getEff(k,kid){const day=gd(k),sched=getSched(k),kd=day[kid]||{};if(day.override&&(kd.daytime||kd.overnight!=null))return{daytime:kd.daytime||sched.daytime,overnight:kd.overnight!=null?kd.overnight:sched.overnight};return{daytime:sched.daytime,overnight:sched.overnight}}
+function getSchedEff(k,kid){const day=gd(k),sched=getSched(k),so=day.schedOverride&&day.schedOverride[kid];if(so){return{daytime:so.daytime||sched.daytime,overnight:so.overnight!=null?so.overnight:sched.overnight,swapped:!!(so.daytime&&so.daytime!==sched.daytime)||(so.overnight!=null&&so.overnight!==sched.overnight)}}return{daytime:sched.daytime,overnight:sched.overnight,swapped:false}}
+function hasSchedSwap(k){const day=gd(k);if(!day.schedOverride)return false;for(const kid of KIDS){const se=getSchedEff(k,kid);if(se.swapped)return true}return false}
 function isOv(k){const d=gd(k);if(!d||!d.override)return false;const s=getSched(k);for(const kid of KIDS){const kd=d[kid]||{};if(kd.daytime&&kd.daytime!==s.daytime)return true;if(kd.overnight!=null&&kd.overnight!==s.overnight)return true}return false}
 function mCells(y,m){const f=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate(),pd=new Date(y,m,0).getDate(),c=[];for(let i=f-1;i>=0;i--)c.push({d:pd-i,m:m-1,y:m===0?y-1:y,o:1});for(let i=1;i<=dim;i++)c.push({d:i,m,y,o:0});const r=42-c.length;for(let i=1;i<=r;i++)c.push({d:i,m:m+1,y:m===11?y+1:y,o:1});return c}
 
@@ -97,6 +99,8 @@ function nm(d){S.cM+=d;if(S.cM>11){S.cM=0;S.cY++}if(S.cM<0){S.cM=11;S.cY--}S.sel
 function sel(k){S.sel=k;S.pf=[];R()}
 function goTo(k){const[y,m]=k.split('-').map(Number);S.cY=y;S.cM=m-1;S.sel=k;S.tab='calendar';S.pf=[];R()}
 function setK(kid,field,val){const d=gd(S.sel);if(!S.days[S.sel])S.days[S.sel]={};if(!S.days[S.sel][kid])S.days[S.sel][kid]={daytime:null,overnight:null};S.days[S.sel][kid][field]=val;S.days[S.sel].override=true;svDays();R()}
+function setSchedK(kid,field,val){if(!S.days[S.sel])S.days[S.sel]={};if(!S.days[S.sel].schedOverride)S.days[S.sel].schedOverride={};if(!S.days[S.sel].schedOverride[kid])S.days[S.sel].schedOverride[kid]={daytime:null,overnight:null};S.days[S.sel].schedOverride[kid][field]=val;svDays();R()}
+function resetSched(){if(S.days[S.sel]){delete S.days[S.sel].schedOverride;svDays();R()}}
 function resetDay(){if(S.days[S.sel]){S.days[S.sel].gus={daytime:null,overnight:null};S.days[S.sel].zeke={daytime:null,overnight:null};S.days[S.sel].override=false;svDays();R()}}
 function addEv(){
   const type=document.getElementById('ev-type').value,fromSel=document.getElementById('ev-from-sel').value,fromCust=(document.getElementById('ev-from-cust')||{}).value||'',from=fromSel==='_custom'?fromCust.trim():fromSel,child=document.getElementById('ev-child').value,content=document.getElementById('ev-content').value.trim(),time=document.getElementById('ev-time').value,imp=document.getElementById('ev-imp').value;
@@ -202,7 +206,7 @@ function renderCal(s,tK,secThu){
       <div class="stat"><div class="stat-label">Evidence</div><div class="stat-val" style="color:var(--ev)">${s.ev}</div></div>
     </div>
     ${secThu?`<div style="font-size:11px;color:var(--warn-fg);background:var(--warn-bg);padding:6px 12px;border-radius:6px;margin-bottom:12px">&#9888; <b>2nd weekend (Thu ${MO[S.cM].substr(0,3)} ${secThu}):</b> Father Thu overnight only. Fri–Sun → Mother.</div>`:''}
-    <div class="legend"><span><span class="ld" style="background:var(--gus)"></span>Gus w/ Father</span><span><span class="ld" style="background:var(--zeke)"></span>Zeke w/ Father</span><span><span class="ld" style="background:var(--mom)"></span>w/ Mother</span><span><span class="ld" style="background:var(--warn)"></span>Override</span></div>
+    <div class="legend"><span><span class="ld" style="background:var(--gus)"></span>Gus w/ Father</span><span><span class="ld" style="background:var(--zeke)"></span>Zeke w/ Father</span><span><span class="ld" style="background:var(--mom)"></span>w/ Mother</span><span><span class="ld" style="background:var(--warn)"></span>Override</span><span><span class="ld" style="background:var(--pink)"></span>Swap</span></div>
     <div class="panel no-print"><div style="display:flex;justify-content:space-between;cursor:pointer" onclick="S.bulkOpen=!S.bulkOpen;R()"><h3 style="margin-bottom:0">Bulk entry — date range</h3><span style="font-size:18px;color:var(--tx3)">${S.bulkOpen?'&#9650;':'&#9660;'}</span></div>
     ${S.bulkOpen?`<div style="margin-top:12px"><div class="fg"><div class="fr"><label>Start</label><input type="date" id="bulk-start" value="${S.bulk.start}" /></div><div class="fr"><label>End</label><input type="date" id="bulk-end" value="${S.bulk.end}" /></div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">${bulkChildCard('Zeke','#D4537E','zD','zO')}${bulkChildCard('Gus','#378ADD','gD','gO')}</div>
@@ -219,6 +223,7 @@ function renderCal(s,tK,secThu){
       if(gSame){if(ge.daytime==='dad'&&ge.overnight==='dad')tags+='<span class="tg tg-g-dad">Both D+ON</span>';else if(ge.daytime==='dad')tags+='<span class="tg tg-g-dad">Both Day</span>';else tags+='<span class="tg tg-g-mom">Both Mom</span>'}
       else{const gc=ge.daytime==='dad'||ge.overnight==='dad'?'tg-g-dad':'tg-g-mom';const zc=ze.daytime==='dad'||ze.overnight==='dad'?'tg-z-dad':'tg-z-mom';tags+=`<span class="tg ${gc}">G:${ge.daytime==='dad'?'D':''}${ge.overnight==='dad'?'ON':''}</span><span class="tg ${zc}">Z:${ze.daytime==='dad'?'D':''}${ze.overnight==='dad'?'ON':''}</span>`}
       if(ov)tags+='<span class="tg tg-fi">!</span>';
+      if(hasSchedSwap(k))tags+='<span class="tg tg-xc">SW</span>';
       if(day.evidence&&day.evidence.length)tags+=`<span class="tg tg-ev">${day.evidence.length}</span>`;
       return`<div class="${cls}" onclick="sel('${k}')"><div class="sbar-wrap"><div class="sbar-child ${gBar}" title="Gus"></div><div class="sbar-child ${zBar}" title="Zeke"></div></div><div class="dn">${c.d}</div><div class="dtags">${tags}</div></div>`;
     }).join('')}</div></div>
@@ -227,13 +232,75 @@ function renderCal(s,tK,secThu){
 
 function renderDay(ph){
   const k=S.sel,day=gd(k),sched=getSched(k),ov=isOv(k),ev=day.evidence||[],xc=day.exchanges||[];
-  function childCard(kid){const e=getEff(k,kid),kc=KC[kid],name=KN[kid];return`<div class="child-section"><div class="child-header"><div class="child-avatar" style="background:${kc.avatar}">${name[0]}</div><div class="child-name">${name}</div></div><div style="font-size:11px;color:var(--tx2);margin-bottom:6px">Daytime</div><div class="child-grid" style="margin-bottom:8px"><div class="child-btn ${e.daytime==='dad'?'sel-dad':''}" onclick="setK('${kid}','daytime','dad')">&#127968; Father</div><div class="child-btn ${e.daytime==='mom'?'sel-mom':''}" onclick="setK('${kid}','daytime','mom')">&#127968; Mother</div></div><div style="font-size:11px;color:var(--tx2);margin-bottom:6px">Overnight</div><div class="child-grid"><div class="child-btn ${e.overnight==='dad'?'sel-dad':''}" onclick="setK('${kid}','overnight','dad')">&#127769; Father</div><div class="child-btn ${e.overnight==='mom'?'sel-mom':''}" onclick="setK('${kid}','overnight','mom')">&#127769; Mother</div></div></div>`}
+  const swapped=hasSchedSwap(k);
+
+  function schedChildRow(kid){
+    const se=getSchedEff(k,kid),kc=KC[kid],name=KN[kid],courtSched=getSched(k);
+    const isSwap=se.swapped;
+    return`<div style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div style="width:20px;height:20px;border-radius:50%;background:${kc.avatar};display:flex;align-items:center;justify-content:center;font-weight:500;font-size:10px;color:#fff">${name[0]}</div><span style="font-weight:500;font-size:12px">${name}</span>${isSwap?'<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:var(--pink-bg);color:var(--pink-fg);font-weight:500">SWAP</span>':''}</div>
+      <div style="font-size:10px;color:var(--tx2);margin-bottom:3px">Daytime</div>
+      <div class="child-grid" style="margin-bottom:6px">
+        <div class="child-btn ${se.daytime==='dad'?'sel-dad':''}" onclick="setSchedK('${kid}','daytime','dad')" style="font-size:11px;padding:6px">Father</div>
+        <div class="child-btn ${se.daytime==='mom'?'sel-mom':''}" onclick="setSchedK('${kid}','daytime','mom')" style="font-size:11px;padding:6px">Mother</div>
+      </div>
+      <div style="font-size:10px;color:var(--tx2);margin-bottom:3px">Overnight</div>
+      <div class="child-grid">
+        <div class="child-btn ${se.overnight==='dad'?'sel-dad':''}" onclick="setSchedK('${kid}','overnight','dad')" style="font-size:11px;padding:6px">Father</div>
+        <div class="child-btn ${se.overnight==='mom'?'sel-mom':''}" onclick="setSchedK('${kid}','overnight','mom')" style="font-size:11px;padding:6px">Mother</div>
+      </div>
+    </div>`;
+  }
+
+  function actualChildRow(kid){
+    const e=getEff(k,kid),kc=KC[kid],name=KN[kid];
+    return`<div style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div style="width:20px;height:20px;border-radius:50%;background:${kc.avatar};display:flex;align-items:center;justify-content:center;font-weight:500;font-size:10px;color:#fff">${name[0]}</div><span style="font-weight:500;font-size:12px">${name}</span></div>
+      <div style="font-size:10px;color:var(--tx2);margin-bottom:3px">Daytime</div>
+      <div class="child-grid" style="margin-bottom:6px">
+        <div class="child-btn ${e.daytime==='dad'?'sel-dad':''}" onclick="setK('${kid}','daytime','dad')" style="font-size:11px;padding:6px">Father</div>
+        <div class="child-btn ${e.daytime==='mom'?'sel-mom':''}" onclick="setK('${kid}','daytime','mom')" style="font-size:11px;padding:6px">Mother</div>
+      </div>
+      <div style="font-size:10px;color:var(--tx2);margin-bottom:3px">Overnight</div>
+      <div class="child-grid">
+        <div class="child-btn ${e.overnight==='dad'?'sel-dad':''}" onclick="setK('${kid}','overnight','dad')" style="font-size:11px;padding:6px">Father</div>
+        <div class="child-btn ${e.overnight==='mom'?'sel-mom':''}" onclick="setK('${kid}','overnight','mom')" style="font-size:11px;padding:6px">Mother</div>
+      </div>
+    </div>`;
+  }
+
+  // Detect if actual differs from scheduled
+  let mismatch=false;
+  for(const kid of KIDS){const se=getSchedEff(k,kid),ae=getEff(k,kid);if(se.daytime!==ae.daytime||se.overnight!==ae.overnight)mismatch=true}
+
+  const dayBg=sched.daytime==='dad'?'var(--dad-bg)':'var(--mom-bg)',dayFg=sched.daytime==='dad'?'var(--dad-fg)':'var(--mom-fg)',dayWho=sched.daytime==='dad'?'Father':'Mother';
+  const nBg=sched.overnight==='dad'?'var(--on-bg)':'var(--mom-bg)',nFg=sched.overnight==='dad'?'var(--on-fg)':'var(--mom-fg)',nWho=sched.overnight==='dad'?'Father':'Mother';
+
   return`<div class="panel"><h3>${fmD(k)}</h3>
-    <div class="sn"><b>Court order:</b> ${esc(sched.note)}<br><b>Scheduled:</b> <span class="sp" style="background:${sched.daytime==='dad'?'var(--dad-bg)':'var(--mom-bg)'};color:${sched.daytime==='dad'?'var(--dad-fg)':'var(--mom-fg)'}">${sched.daytime==='dad'?'Father':'Mother'} day</span> <span class="sp" style="background:${sched.overnight==='dad'?'var(--on-bg)':'var(--mom-bg)'};color:${sched.overnight==='dad'?'var(--on-fg)':'var(--mom-fg)'}">${sched.overnight==='dad'?'Father':'Mother'} night</span></div>
+    <div class="sn"><b>Court order:</b> ${esc(sched.note)}<br><b>Default:</b> <span class="sp" style="background:${dayBg};color:${dayFg}">${dayWho} day</span> <span class="sp" style="background:${nBg};color:${nFg}">${nWho} night</span></div>
     <div class="co-ref">"${esc(sched.ref)}"</div>
-    ${ov?'<div class="on2">&#9888; Overridden.</div>':''}
-    ${childCard('zeke')}${childCard('gus')}
-    ${ov?'<div class="ar" style="margin-bottom:12px"><button class="btn bo bsm" onclick="resetDay()">Reset to court order</button></div>':''}
+
+    ${swapped?'<div class="swap-banner swapped">&#128260; Scheduled parent changed from court order (swap/trade day).</div>':''}
+    ${mismatch?'<div class="swap-banner swapped">&#9888; Actual custody differs from scheduled — deviation logged.</div>':''}
+    ${!swapped&&!mismatch&&ov?'<div class="on2">&#9888; Overridden from court order.</div>':''}
+
+    <div class="sched-actual-grid">
+      <div class="sa-col scheduled">
+        <h4 style="color:var(--ev)">&#128197; Scheduled parent</h4>
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Per court order or agreed swap. Change to log a trade day.</div>
+        ${schedChildRow('zeke')}
+        ${schedChildRow('gus')}
+        ${swapped?'<div class="ar" style="margin-top:4px"><button class="btn bo bsm" onclick="resetSched()">Reset to court order</button></div>':''}
+      </div>
+      <div class="sa-col actual">
+        <h4 style="color:var(--dad)">&#9989; Actual custody</h4>
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Who actually had the kids this day.</div>
+        ${actualChildRow('zeke')}
+        ${actualChildRow('gus')}
+        ${ov?'<div class="ar" style="margin-top:4px"><button class="btn bo bsm" onclick="resetDay()">Reset to scheduled</button></div>':''}
+      </div>
+    </div>
+
     <div class="psec"><h3>Log evidence</h3>
       <div class="fg"><div class="fr"><label>Type</label><select id="ev-type"><option value="text">Text message</option><option value="email">Email</option><option value="document">Document</option><option value="photo">Photo/screenshot</option><option value="note">Note</option></select></div>
       <div class="fr"><label>From</label><select id="ev-from-sel" onchange="document.getElementById('ev-from-cust').style.display=this.value==='_custom'?'block':'none'"><option value="Kelly (Ex)">Kelly — Ex</option><option value="James (Ex Husband)">James — Ex's Husband</option><option value="Attorney">Attorney</option><option value="School">School</option><option value="Court">Court</option><option value="Self">Self</option><option value="_custom">Other...</option></select><input type="text" id="ev-from-cust" placeholder="Name..." style="display:none;margin-top:6px;width:100%;padding:9px 11px;border:.5px solid rgba(0,0,0,.1);border-radius:6px;font-size:13px" /></div></div>

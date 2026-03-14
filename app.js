@@ -43,7 +43,28 @@ function dowN(k){const[y,m,d]=k.split('-').map(Number);return DN[new Date(y,m-1,
 function nthDow(y,m,dow,n){let c=0;for(let d=1;d<=31;d++){const dt=new Date(y,m,d);if(dt.getMonth()!==m)break;if(dt.getDay()===dow){c++;if(c===n)return d}}return null}
 function getSummerRange(yr){const ok=yr===2025?'schoolOut2025':'schoolOut2026',lk=yr===2025?'laborDay2025':'laborDay2026';let o=parseDStr(cfg[ok]);while(o.getDay()!==5)o.setDate(o.getDate()+1);return{start:o,end:parseDStr(cfg[lk])}}
 function isInSummer(dt){for(const yr of[2025,2026]){try{const r=getSummerRange(yr);if(dt>=r.start&&dt<=r.end)return{yes:true,start:r.start}}catch(e){}}return{yes:false}}
-function is2ndWknd(y,m,d){const st=nthDow(y,m,4,2);if(!st)return{is:false};if(d>=st&&d<=st+3)return{is:true,off:d-st};return{is:false}}
+function is2ndWknd(y,m,d){
+  // Per court order: 2nd weekend = the weekend (Thu-Sun) that falls AFTER the first Sunday of the month
+  // Step 1: Find first Sunday of the month
+  const firstSun=nthDow(y,m,0,1); // 0=Sunday, 1st occurrence
+  if(!firstSun)return{is:false};
+  // Step 2: Find first Thursday AFTER that first Sunday
+  // That Thursday starts the "2nd weekend"
+  let thuDate=firstSun+1; // day after first Sunday
+  // Walk forward to find the next Thursday
+  while(new Date(y,m,thuDate).getDay()!==4){
+    thuDate++;
+    if(thuDate>31)return{is:false};
+    if(new Date(y,m,thuDate).getMonth()!==m)return{is:false};
+  }
+  // The 2nd weekend block is thuDate(Thu), thuDate+1(Fri), thuDate+2(Sat), thuDate+3(Sun)
+  if(d>=thuDate&&d<=thuDate+3){
+    // Make sure the Sun doesn't spill into next month
+    if(new Date(y,m,thuDate+3).getMonth()!==m&&d>new Date(y,m+1,0).getDate())return{is:false};
+    return{is:true,off:d-thuDate};
+  }
+  return{is:false};
+}
 
 function getSched(dateStr){
   const[y,m,d]=dateStr.split('-').map(Number);const dt=new Date(y,m-1,d),dow=dt.getDay(),mo=m-1;
@@ -155,7 +176,11 @@ function resetAll(){if(!confirm('Delete ALL?'))return;if(!confirm('Last chance!'
 // This is a large render function that builds all tabs. Kept as template literals for performance.
 
 function R(){
-  const app=document.getElementById('app'),today=new Date(),tK=dk(today.getFullYear(),today.getMonth(),today.getDate()),s=mSt(),secThu=nthDow(S.cY,S.cM,4,2);
+  const app=document.getElementById('app'),today=new Date(),tK=dk(today.getFullYear(),today.getMonth(),today.getDate()),s=mSt();
+  // Find 2nd weekend Thu: first Thursday after first Sunday
+  const firstSun=nthDow(S.cY,S.cM,0,1);
+  let secThu=null;
+  if(firstSun){let td=firstSun+1;while(td<=31){if(new Date(S.cY,S.cM,td).getMonth()===S.cM&&new Date(S.cY,S.cM,td).getDay()===4){secThu=td;break}td++}}
 
   // Build tabs HTML
   const TABS=['calendar','evidence','documents','exchanges','summary','settings'];
@@ -209,7 +234,7 @@ function renderCal(s,tK,secThu){
       <div class="stat"><div class="stat-label">Zeke — Father ON</div><div class="stat-val" style="color:var(--on)">${s.zO}</div></div>
       <div class="stat"><div class="stat-label">Evidence</div><div class="stat-val" style="color:var(--ev)">${s.ev}</div></div>
     </div>
-    ${secThu?`<div style="font-size:11px;color:var(--warn-fg);background:var(--warn-bg);padding:6px 12px;border-radius:6px;margin-bottom:12px">&#9888; <b>2nd weekend (Thu ${MO[S.cM].substr(0,3)} ${secThu}):</b> Father Thu overnight only. Fri–Sun → Mother.</div>`:''}
+    ${secThu?`<div style="font-size:11px;color:var(--warn-fg);background:var(--warn-bg);padding:6px 12px;border-radius:6px;margin-bottom:12px">&#9888; <b>2nd weekend (Thu ${MO[S.cM].substr(0,3)} ${secThu}–Sun ${secThu+3}):</b> Mother's weekend. Father gets Thu overnight only (→ Fri 8am). <span style="font-size:10px;color:var(--tx3)">[1st Sun after ${MO[S.cM].substr(0,3)} ${firstSun}]</span></div>`:''}
     <div class="legend"><span><span class="ld" style="background:var(--gus)"></span>Gus w/ Father</span><span><span class="ld" style="background:var(--zeke)"></span>Zeke w/ Father</span><span><span class="ld" style="background:var(--mom)"></span>w/ Mother</span><span><span class="ld" style="background:var(--warn)"></span>Override</span><span><span class="ld" style="background:var(--pink)"></span>Swap</span></div>
     <div class="panel no-print"><div style="display:flex;justify-content:space-between;cursor:pointer" onclick="S.bulkOpen=!S.bulkOpen;R()"><h3 style="margin-bottom:0">Bulk entry — date range</h3><span style="font-size:18px;color:var(--tx3)">${S.bulkOpen?'&#9650;':'&#9660;'}</span></div>
     ${S.bulkOpen?`<div style="margin-top:12px"><div class="fg"><div class="fr"><label>Start</label><input type="date" id="bulk-start" value="${S.bulk.start}" /></div><div class="fr"><label>End</label><input type="date" id="bulk-end" value="${S.bulk.end}" /></div></div>
@@ -350,7 +375,7 @@ function renderSum(){let gD=0,gO=0,zD=0,zO=0,gMd=0,gMo=0,zMd=0,zMo=0;for(let y=2
 
 function renderCfg(){return`<div class="panel"><h3>Court order schedule</h3><p style="font-size:12px;color:var(--tx2);margin-bottom:14px">Gunderson v. Winkels — applies equally to Zeke &amp; Gus.</p>
   <div class="sr"><div><b>School year</b><div style="font-size:12px;color:var(--tx2);margin-top:2px">Father: Thu after school → Sun 7pm every weekend. ON Thu/Fri/Sat.</div></div></div>
-  <div class="sr"><div><b>2nd weekend</b><div style="font-size:12px;color:var(--tx2);margin-top:2px">Mother's weekend. Father: Thu overnight only (→ Fri 8am).</div></div></div>
+  <div class="sr"><div><b>2nd weekend</b><div style="font-size:12px;color:var(--tx2);margin-top:2px">The weekend (Thu–Sun) after the 1st Sunday of each month → Mother's. Father: Thu overnight only (→ Fri 8am).</div></div></div>
   <div class="sr"><div><b>Summer</b><div style="font-size:12px;color:var(--tx2);margin-top:2px">First Fri after school out → Labor Day. Alternating weeks, 5pm Fri.</div></div></div>
   <div class="sr"><div><b>Father first summer week</b></div><div class="tgl ${cfg.summerFirstWeekFather?'on':''}" onclick="cfg.summerFirstWeekFather=!cfg.summerFirstWeekFather;svCfg();R()"></div></div>
   <div class="fg" style="margin-top:14px"><div class="fr"><label>School out 2025</label><input type="date" value="${cfg.schoolOut2025}" onchange="cfg.schoolOut2025=this.value;svCfg();R()" /></div><div class="fr"><label>Labor Day 2025</label><input type="date" value="${cfg.laborDay2025}" onchange="cfg.laborDay2025=this.value;svCfg();R()" /></div><div class="fr"><label>School out 2026</label><input type="date" value="${cfg.schoolOut2026}" onchange="cfg.schoolOut2026=this.value;svCfg();R()" /></div><div class="fr"><label>Labor Day 2026</label><input type="date" value="${cfg.laborDay2026}" onchange="cfg.laborDay2026=this.value;svCfg();R()" /></div></div></div>`}

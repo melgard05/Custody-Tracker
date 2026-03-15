@@ -106,6 +106,20 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--tx1);background:var(
 .sync-bar{background:var(--dad-bg);color:var(--dad-fg);padding:8px 14px;border-radius:var(--r);font-size:12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
 .sync-bar .sync-dot{width:8px;height:8px;border-radius:50%;background:var(--dad);margin-right:6px;display:inline-block}
 .swap-banner{font-size:11px;padding:8px 12px;border-radius:6px;margin-bottom:10px;display:flex;align-items:center;gap:6px;font-weight:500}
+.view-toggle{display:flex;gap:2px;background:var(--bg3);border-radius:6px;padding:2px;margin-bottom:10px}
+.view-toggle button{flex:none;padding:5px 12px;font-size:11px;font-weight:500;cursor:pointer;border-radius:4px;border:none;background:transparent;color:var(--tx2);font-family:inherit}
+.view-toggle button.active{background:var(--bg);color:var(--tx1);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--brd);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+.week-cell{padding:8px 6px;background:var(--bg);cursor:pointer;min-height:100px;border:1.5px solid transparent}
+.week-cell:hover{background:var(--bg2)}
+.week-cell.sel{border-color:var(--ev);background:var(--ev-bg)}
+.week-cell.today{border-color:var(--dad)}
+.week-cell .wc-date{font-size:12px;font-weight:500;margin-bottom:4px;color:var(--tx2)}
+.week-cell .wc-day{font-size:10px;color:var(--tx3);margin-bottom:6px}
+.day-detail-view{background:var(--bg);border-radius:var(--rl);border:.5px solid var(--brd);padding:16px;margin-bottom:12px}
+.day-detail-view .dv-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.day-detail-view .dv-date{font-family:'Fraunces',serif;font-size:20px;font-weight:500}
+.day-detail-view .dv-dow{font-size:13px;color:var(--tx2)}
 .swap-banner.swapped{background:#FBEAF0;color:#72243E;border:.5px solid #D4537E}
 .swap-banner.match{background:var(--dad-bg);color:var(--dad-fg);border:.5px solid var(--dad)}
 .sched-actual-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -191,7 +205,7 @@ function lsSet(k,v){try{localStorage.setItem(LS_PREFIX+k,JSON.stringify(v))}catc
 
 // State
 const SK='days',FK='files',VK='vault',CFK='cfg';
-let S={tab:'calendar',cM:new Date().getMonth(),cY:new Date().getFullYear(),sel:null,days:{},ef:'all',efFrom:null,sq:'',modal:null,pf:[],vp:[],vf:'all',bulkOpen:false,bulk:{start:'',end:'',zD:null,zO:null,gD:null,gO:null},bulkMsg:''};
+let S={tab:'calendar',cM:new Date().getMonth(),cY:new Date().getFullYear(),sel:null,days:{},ef:'all',efFrom:null,sq:'',modal:null,pf:[],vp:[],vf:'all',bulkOpen:false,bulk:{start:'',end:'',zD:null,zO:null,gD:null,gO:null},bulkMsg:'',calView:'month',calWeekStart:null,calDay:null};
 let FS={},vault=[],cfg={summerFirstWeekFather:true,schoolOut2025:'2025-06-05',schoolOut2026:'2026-06-04',laborDay2025:'2025-09-01',laborDay2026:'2026-09-07'};
 
 async function loadAll(){
@@ -305,6 +319,10 @@ function filtEv(){let l=allEv();if(S.ef!=='all')l=l.filter(e=>e.type===S.ef);if(
 
 // ═══ ACTIONS ═══
 function stab(t){S.tab=t;R()}
+function setCalView(v){S.calView=v;if(v==='week'&&!S.calWeekStart){const d=new Date();d.setDate(d.getDate()-d.getDay());S.calWeekStart=dk(d.getFullYear(),d.getMonth(),d.getDate())}if(v==='day'&&!S.calDay){S.calDay=dk(new Date().getFullYear(),new Date().getMonth(),new Date().getDate())}R()}
+function getWeekDays(startKey){const[y,m,d]=startKey.split('-').map(Number);const days=[];for(let i=0;i<7;i++){const dt=new Date(y,m-1,d+i);days.push(dk(dt.getFullYear(),dt.getMonth(),dt.getDate()))}return days}
+function navWeek(dir){const[y,m,d]=S.calWeekStart.split('-').map(Number);const dt=new Date(y,m-1,d+(dir*7));S.calWeekStart=dk(dt.getFullYear(),dt.getMonth(),dt.getDate());S.sel=null;R()}
+function navDay(dir){const[y,m,d]=S.calDay.split('-').map(Number);const dt=new Date(y,m-1,d+dir);S.calDay=dk(dt.getFullYear(),dt.getMonth(),dt.getDate());S.sel=S.calDay;S.pf=[];R()}
 function nm(d){S.cM+=d;if(S.cM>11){S.cM=0;S.cY++}if(S.cM<0){S.cM=11;S.cY--}S.sel=null;R()}
 function sel(k){S.sel=k;S.pf=[];R()}
 function goTo(k){const[y,m]=k.split('-').map(Number);S.cY=y;S.cM=m-1;S.sel=k;S.tab='calendar';S.pf=[];R()}
@@ -422,13 +440,29 @@ function renderCal(s,tK,secThu,firstSun){
     </div>
     ${secThu?`<div style="font-size:11px;color:var(--warn-fg);background:var(--warn-bg);padding:6px 12px;border-radius:6px;margin-bottom:12px">&#9888; <b>2nd weekend (Thu ${MO[S.cM].substr(0,3)} ${secThu}–Sun ${secThu+3}):</b> Mother's weekend. Father gets Thu overnight only (→ Fri 8am). <span style="font-size:10px;color:var(--tx3)">[1st Sun after ${MO[S.cM].substr(0,3)} ${firstSun}]</span></div>`:''}
     <div class="legend"><span><span class="ld" style="background:var(--gus)"></span>Gus w/ Father</span><span><span class="ld" style="background:var(--zeke)"></span>Zeke w/ Father</span><span><span class="ld" style="background:var(--mom)"></span>w/ Mother</span><span><span class="ld" style="background:var(--warn)"></span>Override</span><span><span class="ld" style="background:var(--pink)"></span>Swap</span></div>
+
+    <div class="view-toggle">
+      <button class="${S.calView==='month'?'active':''}" onclick="setCalView('month')">Month</button>
+      <button class="${S.calView==='week'?'active':''}" onclick="setCalView('week')">Week</button>
+      <button class="${S.calView==='day'?'active':''}" onclick="setCalView('day')">Day</button>
+    </div>
+
     <div class="panel no-print"><div style="display:flex;justify-content:space-between;cursor:pointer" onclick="S.bulkOpen=!S.bulkOpen;R()"><h3 style="margin-bottom:0">Bulk entry — date range</h3><span style="font-size:18px;color:var(--tx3)">${S.bulkOpen?'&#9650;':'&#9660;'}</span></div>
     ${S.bulkOpen?`<div style="margin-top:12px"><div class="fg"><div class="fr"><label>Start</label><input type="date" id="bulk-start" value="${S.bulk.start}" /></div><div class="fr"><label>End</label><input type="date" id="bulk-end" value="${S.bulk.end}" /></div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">${bulkChildCard('Zeke','#D4537E','zD','zO')}${bulkChildCard('Gus','#378ADD','gD','gO')}</div>
     <div style="font-size:11px;color:var(--tx3);margin-top:8px">Only highlighted fields apply.</div>
     <div class="ar" style="margin-top:6px"><button class="btn bp" onclick="applyBulk()">Apply</button><button class="btn bo" onclick="resetBulk()">Clear</button></div>
     ${S.bulkMsg?`<div style="margin-top:8px;font-size:12px;color:var(--dad);font-weight:500">${S.bulkMsg}</div>`:''}</div>`:''}</div>
-    <div class="cal-c"><div class="cn"><button onclick="nm(-1)">&larr; ${MO[(S.cM+11)%12].substr(0,3)}</button><span class="mt">${MO[S.cM]} ${S.cY}</span><button onclick="nm(1)">${MO[(S.cM+1)%12].substr(0,3)} &rarr;</button></div>
+
+    ${S.calView==='month'?renderMonthGrid(tK):''}
+    ${S.calView==='week'?renderWeekGrid(tK):''}
+    ${S.calView==='day'?renderDayView(tK,pendingHtml):''}
+
+    ${S.calView!=='day'?(S.sel?renderDay(pendingHtml):'<div class="panel"><div class="es">Select a date</div></div>'):''}`;
+}
+
+function renderMonthGrid(tK){
+  return`<div class="cal-c"><div class="cn"><button onclick="nm(-1)">&larr; ${MO[(S.cM+11)%12].substr(0,3)}</button><span class="mt">${MO[S.cM]} ${S.cY}</span><button onclick="nm(1)">${MO[(S.cM+1)%12].substr(0,3)} &rarr;</button></div>
     <div class="cg">${DN.map(d=>`<div class="dh">${d}</div>`).join('')}${mCells(S.cY,S.cM).map(c=>{
       const k=dk(c.y,c.m,c.d),ge=getEff(k,'gus'),ze=getEff(k,'zeke'),day=gd(k),ov=isOv(k);
       let cls='dc';if(c.o)cls+=' om';if(k===tK)cls+=' today';if(k===S.sel)cls+=' sel';
@@ -441,8 +475,80 @@ function renderCal(s,tK,secThu,firstSun){
       const sc=hasSchedChange(k);if(sc){const sct=getSchedChangeType(k);tags+=sct==='swap'?'<span class="tg tg-xc">SW</span>':sct==='extra_father'?'<span class="tg tg-g-dad">+F</span>':sct==='extra_mother'?'<span class="tg tg-g-mom">+M</span>':'<span class="tg tg-fi">SC</span>'}
       if(day.evidence&&day.evidence.length)tags+=`<span class="tg tg-ev">${day.evidence.length}</span>`;
       return`<div class="${cls}" onclick="sel('${k}')"><div class="sbar-wrap"><div class="sbar-child ${gBar}" title="Gus"></div><div class="sbar-child ${zBar}" title="Zeke"></div></div><div class="dn">${c.d}</div><div class="dtags">${tags}</div></div>`;
-    }).join('')}</div></div>
-    ${S.sel?renderDay(pendingHtml):'<div class="panel"><div class="es">Select a date</div></div>'}`;
+    }).join('')}</div></div>`;
+}
+
+function renderWeekGrid(tK){
+  if(!S.calWeekStart){const d=new Date();d.setDate(d.getDate()-d.getDay());S.calWeekStart=dk(d.getFullYear(),d.getMonth(),d.getDate())}
+  const wDays=getWeekDays(S.calWeekStart);
+  const[wy,wm,wd]=S.calWeekStart.split('-').map(Number);
+  const weekEnd=wDays[6];
+  const[ey,em]=weekEnd.split('-').map(Number);
+  const navLabel=wm===em?`${MO[wm-1].substr(0,3)} ${wd}–${weekEnd.split('-')[2]}, ${wy}`:`${MO[wm-1].substr(0,3)} ${wd} – ${MO[em-1].substr(0,3)} ${weekEnd.split('-')[2]}, ${wy}`;
+
+  return`<div class="cal-c">
+    <div class="cn"><button onclick="navWeek(-1)">&larr; Prev week</button><span class="mt">${navLabel}</span><button onclick="navWeek(1)">Next week &rarr;</button></div>
+    <div class="week-grid">
+      ${DN.map(d=>`<div class="dh">${d}</div>`).join('')}
+      ${wDays.map(k=>{
+        const ge=getEff(k,'gus'),ze=getEff(k,'zeke'),day=gd(k),ov=isOv(k);
+        const isSel=k===S.sel,isToday=k===tK;
+        let cls='week-cell';if(isSel)cls+=' sel';if(isToday)cls+=' today';
+        const gBar=ge.daytime==='dad'&&ge.overnight==='dad'?'sb-dad':ge.daytime==='dad'?'sb-sp':'sb-mom';
+        const zBar=ze.daytime==='dad'&&ze.overnight==='dad'?'sb-dad':ze.daytime==='dad'?'sb-sp':'sb-mom';
+
+        // More detailed tags for week view since we have more space
+        let gLabel=ge.daytime==='dad'&&ge.overnight==='dad'?'Father D+ON':ge.daytime==='dad'?'Father Day':'Mother';
+        let zLabel=ze.daytime==='dad'&&ze.overnight==='dad'?'Father D+ON':ze.daytime==='dad'?'Father Day':'Mother';
+        const sc=hasSchedChange(k);const sct=sc?getSchedChangeType(k):'';
+
+        return`<div class="${cls}" onclick="sel('${k}')">
+          <div class="wc-date">${fmS(k)}</div>
+          <div class="sbar-wrap"><div class="sbar-child ${gBar}"></div><div class="sbar-child ${zBar}"></div></div>
+          <div style="margin-top:4px">
+            <div style="font-size:9px;display:flex;align-items:center;gap:3px;margin-bottom:2px"><span style="width:14px;height:14px;border-radius:50%;background:#378ADD;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:7px;flex-shrink:0">G</span>${gLabel}</div>
+            <div style="font-size:9px;display:flex;align-items:center;gap:3px"><span style="width:14px;height:14px;border-radius:50%;background:#D4537E;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:7px;flex-shrink:0">Z</span>${zLabel}</div>
+          </div>
+          ${ov?'<div style="font-size:7px;margin-top:3px"><span class="tg tg-fi">!</span></div>':''}
+          ${sc?`<div style="font-size:7px;margin-top:2px"><span class="tg tg-xc">${sct==='swap'?'SWAP':sct==='extra_father'?'+Father':sct==='extra_mother'?'+Mother':'Change'}</span></div>`:''}
+          ${(day.evidence||[]).length?`<div style="font-size:7px;margin-top:2px"><span class="tg tg-ev">${day.evidence.length} evidence</span></div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function renderDayView(tK,pendingHtml){
+  if(!S.calDay)S.calDay=tK;
+  S.sel=S.calDay;
+  const k=S.calDay;
+  const ge=getEff(k,'gus'),ze=getEff(k,'zeke');
+
+  return`<div class="day-detail-view">
+    <div class="dv-header">
+      <button class="btn bo bsm" onclick="navDay(-1)">&larr; Prev</button>
+      <div style="text-align:center">
+        <div class="dv-date">${fmD(k)}</div>
+        <div style="font-size:11px;color:var(--tx3);margin-top:2px">${k===tK?'Today':''}</div>
+      </div>
+      <button class="btn bo bsm" onclick="navDay(1)">Next &rarr;</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+      <div style="border:.5px solid var(--brd);border-radius:var(--r);padding:12px;text-align:center">
+        <div style="width:36px;height:36px;border-radius:50%;background:#378ADD;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:500;font-size:15px;margin:0 auto 8px">G</div>
+        <div style="font-weight:500;font-size:14px;margin-bottom:4px">Gus</div>
+        <div style="font-size:12px;margin-bottom:2px">Daytime: <b style="color:${ge.daytime==='dad'?'var(--dad)':'var(--mom)'}">${ge.daytime==='dad'?'Father':'Mother'}</b></div>
+        <div style="font-size:12px">Overnight: <b style="color:${ge.overnight==='dad'?'var(--on)':'var(--mom)'}">${ge.overnight==='dad'?'Father':'Mother'}</b></div>
+      </div>
+      <div style="border:.5px solid var(--brd);border-radius:var(--r);padding:12px;text-align:center">
+        <div style="width:36px;height:36px;border-radius:50%;background:#D4537E;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:500;font-size:15px;margin:0 auto 8px">Z</div>
+        <div style="font-weight:500;font-size:14px;margin-bottom:4px">Zeke</div>
+        <div style="font-size:12px;margin-bottom:2px">Daytime: <b style="color:${ze.daytime==='dad'?'var(--dad)':'var(--mom)'}">${ze.daytime==='dad'?'Father':'Mother'}</b></div>
+        <div style="font-size:12px">Overnight: <b style="color:${ze.overnight==='dad'?'var(--on)':'var(--mom)'}">${ze.overnight==='dad'?'Father':'Mother'}</b></div>
+      </div>
+    </div>
+  </div>
+  ${renderDay(pendingHtml)}`;
 }
 
 function renderDay(ph){

@@ -374,7 +374,7 @@ function R(){
   const tabsHtml=TABS.map(t=>`<button class="tab ${S.tab===t?'active':''}" onclick="stab('${t}')">${TLAB[t]}</button>`).join('');
 
   let content='';
-  if(S.tab==='calendar')content=renderCal(s,tK,secThu);
+  if(S.tab==='calendar')content=renderCal(s,tK,secThu,firstSun);
   else if(S.tab==='evidence')content=renderEvLog();
   else if(S.tab==='documents')content=renderVault();
   else if(S.tab==='exchanges')content=renderXchg();
@@ -398,7 +398,7 @@ function R(){
 }
 
 // ═══ CALENDAR TAB ═══
-function renderCal(s,tK,secThu){
+function renderCal(s,tK,secThu,firstSun){
   const pendingHtml=S.pf.length?`<div class="fpl">${S.pf.map((f,i)=>{const inf=fi(f.name);return`<div class="fp" title="${esc(f.name)}">${isImg(f.name)?`<img src="${f.base64}">`:`<div class="fpi">${inf.i}</div>`}<div class="fpb" style="background:${inf.bg};color:${inf.fg}">${inf.l}</div><div class="fpn">${esc(f.name)}</div><button class="fpr" onclick="event.stopPropagation();rp(${i})">&times;</button></div>`}).join('')}</div>`:'';
 
   function bulkChildCard(name,avatar,dKey,oKey){
